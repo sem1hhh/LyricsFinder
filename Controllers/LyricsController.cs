@@ -27,7 +27,7 @@ namespace LyricsFinder.Controllers
         {
             if (string.IsNullOrWhiteSpace(model.InputLyrics))
             {
-                ModelState.AddModelError("InputLyrics", "Please enter a search term");
+                ModelState.AddModelError("InputLyrics", "Lütfen bir arama terimi girin");
                 return View("Index", model);
             }
 
@@ -47,7 +47,7 @@ namespace LyricsFinder.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"Exception in Search action: {ex.Message}");
-                ModelState.AddModelError("", $"An error occurred: {ex.Message}");
+                ModelState.AddModelError("", $"Bir hata oluştu: {ex.Message}");
                 return View("Index", model);
             }
         }

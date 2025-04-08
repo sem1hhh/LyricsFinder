@@ -1,45 +1,45 @@
 @model LyricsFinder.Models.LyricsSearchViewModel
 
 @{
-    ViewData["Title"] = "Song Search Results";
+    ViewData["Title"] = "Şarkı Arama Sonuçları";
 }
 
 <div class="container mt-4">
     <div class="mb-4">
         <a asp-controller="Lyrics" asp-action="Index" class="btn btn-outline-primary">
-            <i class="fas fa-arrow-left"></i> New Search
+            <i class="fas fa-arrow-left"></i> Yeni Arama
         </a>
     </div>
 
     <div class="card shadow mb-4">
         <div class="card-header bg-primary text-white">
-            <h3 class="mb-0">Search Results</h3>
+            <h3 class="mb-0">Arama Sonuçları</h3>
         </div>
         <div class="card-body">
-            <h4>You searched for:</h4>
+            <h4>Arama terimi:</h4>
             <div class="alert alert-info">
                 <p class="mb-0"><i class="fas fa-quote-left text-muted me-2"></i>@Model.InputLyrics<i class="fas fa-quote-right text-muted ms-2"></i></p>
             </div>
 
             <div class="alert alert-info mt-4">
-                <h5><i class="fas fa-info-circle me-2"></i>API URL Used</h5>
+                <h5><i class="fas fa-info-circle me-2"></i>Kullanılan API URL'i</h5>
                 <p class="mb-0">https://api.lyrics.ovh/suggest/@(string.IsNullOrEmpty(Model.InputLyrics) ? "" : Uri.EscapeDataString(Model.InputLyrics))</p>
             </div>
 
             @if (!Model.MatchedSongs.Any())
             {
                 <div class="alert alert-warning mt-4">
-                    <h5><i class="fas fa-exclamation-triangle me-2"></i>No matches found</h5>
-                    <p>We couldn't find any songs matching your search. Please try a different search.</p>
+                    <h5><i class="fas fa-exclamation-triangle me-2"></i>Sonuç bulunamadı</h5>
+                    <p>Aramanızla eşleşen şarkı bulunamadı. Lütfen farklı bir arama yapmayı deneyin.</p>
                 </div>
             }
             else
             {
-                <h4 class="mt-4">Found @Model.MatchedSongs.Count matching songs:</h4>
+                <h4 class="mt-4">@Model.MatchedSongs.Count eşleşen şarkı bulundu:</h4>
                 
-                @if (Model.MatchedSongs.First().Title == "API Error" || 
-                     Model.MatchedSongs.First().Title == "No Results Found" ||
-                     Model.MatchedSongs.First().Title == "Error Occurred")
+                @if (Model.MatchedSongs.First().Title == "API Hatası" || 
+                     Model.MatchedSongs.First().Title == "Sonuç Bulunamadı" ||
+                     Model.MatchedSongs.First().Title == "Hata Oluştu")
                 {
                     <div class="alert alert-danger">
                         <h5>@Model.MatchedSongs.First().Title</h5>
@@ -58,12 +58,12 @@
                                         <div class="col-md-4">
                                             @if (!string.IsNullOrEmpty(song.AlbumCover))
                                             {
-                                                <img src="@song.AlbumCover" class="card-img-top h-100 object-fit-cover" alt="@song.Title album cover">
+                                                <img src="@song.AlbumCover" class="card-img-top h-100 object-fit-cover" alt="@song.Title albüm kapağı">
                                             }
                                             else
                                             {
                                                 <div class="bg-light d-flex justify-content-center align-items-center h-100" style="min-height: 150px;">
-                                                    <i class="fas fa-music fa-3x text-muted"></i>
+                                                    <i class="fas fa-music fa-3x text-primary"></i>
                                                 </div>
                                             }
                                         </div>
@@ -91,15 +91,15 @@
                                                     <div class="mb-3">
                                                         <audio controls style="width: 100%;">
                                                             <source src="@song.PreviewUrl" type="audio/mp3">
-                                                            Your browser does not support the audio element.
+                                                            Tarayıcınız ses öğesini desteklemiyor.
                                                         </audio>
                                                     </div>
                                                 }
                                                 
                                                 <div class="lyrics-preview mt-3">
-                                                    <h6>Lyrics:</h6>
+                                                    <h6>Şarkı Sözleri:</h6>
                                                     <p class="card-text" style="max-height: 150px; overflow-y: auto;">
-                                                        @if (song.Lyrics?.Length > 300 && song.Lyrics != "Lyrics not available" && !song.Lyrics.StartsWith("API Response Preview"))
+                                                        @if (song.Lyrics?.Length > 300 && song.Lyrics != "Şarkı sözleri mevcut değil" && !song.Lyrics.StartsWith("API Yanıtı Önizlemesi"))
                                                         {
                                                             @(song.Lyrics.Substring(0, 300) + "...")
                                                         }
@@ -119,10 +119,10 @@
                     
                     <div class="card mt-5">
                         <div class="card-header bg-secondary text-white">
-                            <h5 class="mb-0">Debug Information - Raw API Response</h5>
+                            <h5 class="mb-0">Hata Ayıklama Bilgisi - Ham API Yanıtı</h5>
                         </div>
                         <div class="card-body">
-                            <pre style="white-space: pre-wrap; max-height: 300px; overflow-y: auto; font-size: 12px;">@(Model.MatchedSongs.FirstOrDefault()?.Lyrics?.StartsWith("API Response Preview") == true ? Model.MatchedSongs.First().Lyrics : "No debug information available")</pre>
+                            <pre style="white-space: pre-wrap; max-height: 300px; overflow-y: auto; font-size: 12px;">@(Model.MatchedSongs.FirstOrDefault()?.Lyrics?.StartsWith("API Yanıtı Önizlemesi") == true ? Model.MatchedSongs.First().Lyrics : "Hata ayıklama bilgisi mevcut değil")</pre>
                         </div>
                     </div>
                 }

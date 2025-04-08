@@ -95,3 +95,4 @@ C:\Users\Sem1h\Desktop\lyrics_founder\LyricsFinder\obj\Debug\net9.0\refint\Lyric
 C:\Users\Sem1h\Desktop\lyrics_founder\LyricsFinder\obj\Debug\net9.0\LyricsFinder.pdb
 C:\Users\Sem1h\Desktop\lyrics_founder\LyricsFinder\obj\Debug\net9.0\LyricsFinder.genruntimeconfig.cache
 C:\Users\Sem1h\Desktop\lyrics_founder\LyricsFinder\obj\Debug\net9.0\ref\LyricsFinder.dll
+C:\Users\Sem1h\Desktop\lyrics_founder\LyricsFinder\obj\Debug\net9.0\LyricsFinder.sourcelink.json

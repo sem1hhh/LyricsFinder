@@ -8,6 +8,7 @@ using LyricsFinder.Models;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Web;
+using System.Text;
 
 namespace LyricsFinder.Services
 {
@@ -22,6 +23,38 @@ namespace LyricsFinder.Services
             _httpClient = httpClient;
         }
 
+        // Method to convert Turkish characters to English equivalents
+        private string ConvertTurkishToEnglish(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+                return input;
+
+            var result = new StringBuilder(input.Length);
+            
+            foreach (char c in input)
+            {
+                // Convert Turkish characters to their English equivalents
+                switch (c)
+                {
+                    case 'ç': result.Append('c'); break;
+                    case 'Ç': result.Append('C'); break;
+                    case 'ğ': result.Append('g'); break;
+                    case 'Ğ': result.Append('G'); break;
+                    case 'ı': result.Append('i'); break;
+                    case 'İ': result.Append('I'); break;
+                    case 'ö': result.Append('o'); break;
+                    case 'Ö': result.Append('O'); break;
+                    case 'ş': result.Append('s'); break;
+                    case 'Ş': result.Append('S'); break;
+                    case 'ü': result.Append('u'); break;
+                    case 'Ü': result.Append('U'); break;
+                    default: result.Append(c); break;
+                }
+            }
+            
+            return result.ToString();
+        }
+
         public async Task<List<SongMatch>> SearchSongsByLyrics(string searchQuery, int maxResults = 10)
         {
             if (string.IsNullOrWhiteSpace(searchQuery))
@@ -31,9 +64,14 @@ namespace LyricsFinder.Services
 
             try
             {
+                // Convert Turkish characters to English equivalents for better search results
+                var englishQuery = ConvertTurkishToEnglish(searchQuery);
+                Console.WriteLine($"Original query: {searchQuery}");
+                Console.WriteLine($"Converted query: {englishQuery}");
+                
                 // Use the Deezer suggest API to search for tracks
                 // Convert spaces to + for API compatibility
-                var encodedQuery = HttpUtility.UrlEncode(searchQuery).Replace("+", "%20");
+                var encodedQuery = HttpUtility.UrlEncode(englishQuery).Replace("+", "%20");
                 var apiUrl = $"{_deezerSuggestApiUrl}{encodedQuery}";
                 
                 Console.WriteLine($"Searching with URL: {apiUrl}");
@@ -50,9 +88,9 @@ namespace LyricsFinder.Services
                     { 
                         new SongMatch 
                         { 
-                            Title = "API Error", 
-                            Artist = $"Status: {response.StatusCode}",
-                            Lyrics = $"Debug info: URL={apiUrl}\nResponse={content}" 
+                            Title = "API Hatası", 
+                            Artist = $"Durum: {response.StatusCode}",
+                            Lyrics = $"Hata ayıklama bilgisi: URL={apiUrl}\nYanıt={content}" 
                         } 
                     };
                 }
@@ -69,9 +107,9 @@ namespace LyricsFinder.Services
                     { 
                         new SongMatch 
                         { 
-                            Title = "No Results Found", 
-                            Artist = "Debug Information",
-                            Lyrics = $"Debug info: URL={apiUrl}\nResponse={content}" 
+                            Title = "Sonuç Bulunamadı", 
+                            Artist = "Hata Ayıklama Bilgisi",
+                            Lyrics = $"Hata ayıklama bilgisi: URL={apiUrl}\nYanıt={content}" 
                         } 
                     };
                 }
@@ -83,9 +121,9 @@ namespace LyricsFinder.Services
                 {
                     var songMatch = new SongMatch
                     {
-                        Artist = track.Artist?.Name ?? "Unknown Artist",
-                        Title = track.Title ?? "Unknown Title",
-                        Lyrics = $"API Response Preview (first 200 chars):\n{content.Substring(0, Math.Min(content.Length, 200))}...",
+                        Artist = track.Artist?.Name ?? "Bilinmeyen Sanatçı",
+                        Title = track.Title ?? "Bilinmeyen Şarkı",
+                        Lyrics = $"API Yanıtı Önizlemesi (ilk 200 karakter):\n{content.Substring(0, Math.Min(content.Length, 200))}...",
                         AlbumCover = track.Album?.CoverMedium,
                         PreviewUrl = track.Preview,
                         ArtistImage = track.Artist?.PictureMedium,
@@ -102,11 +140,16 @@ namespace LyricsFinder.Services
                             {
                                 songMatch.Lyrics = lyrics;
                             }
+                            else
+                            {
+                                songMatch.Lyrics = "Şarkı sözleri mevcut değil";
+                            }
                         }
                     }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"Error getting lyrics: {ex.Message}");
+                        songMatch.Lyrics = "Şarkı sözleri alınırken hata oluştu";
                     }
                     
                     matchedSongs.Add(songMatch);
@@ -121,9 +164,9 @@ namespace LyricsFinder.Services
                 {
                     new SongMatch
                     {
-                        Title = "Error Occurred",
-                        Artist = "Exception Details",
-                        Lyrics = $"Error Type: {ex.GetType().Name}\nMessage: {ex.Message}\nStack Trace: {ex.StackTrace}"
+                        Title = "Hata Oluştu",
+                        Artist = "Hata Detayları",
+                        Lyrics = $"Hata Türü: {ex.GetType().Name}\nMesaj: {ex.Message}\nYığın İzleme: {ex.StackTrace}"
                     }
                 };
             }
@@ -133,32 +176,36 @@ namespace LyricsFinder.Services
         {
             if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(title))
             {
-                return "Lyrics not available";
+                return "Şarkı sözleri mevcut değil";
             }
             
             try
             {
-                var response = await _httpClient.GetAsync($"{_lyricsApiBaseUrl}/{Uri.EscapeDataString(artist)}/{Uri.EscapeDataString(title)}");
+                // Also convert artist and title to English for better lyrics search
+                var englishArtist = ConvertTurkishToEnglish(artist);
+                var englishTitle = ConvertTurkishToEnglish(title);
+                
+                var response = await _httpClient.GetAsync($"{_lyricsApiBaseUrl}/{Uri.EscapeDataString(englishArtist)}/{Uri.EscapeDataString(englishTitle)}");
                 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return "Lyrics not available";
+                    return "Şarkı sözleri mevcut değil";
                 }
 
                 var content = await response.Content.ReadAsStringAsync();
                 var lyricsResponse = JsonSerializer.Deserialize<LyricsResponse>(content);
                 
                 return string.IsNullOrWhiteSpace(lyricsResponse?.Lyrics) 
-                    ? "Lyrics not available" 
+                    ? "Şarkı sözleri mevcut değil" 
                     : lyricsResponse.Lyrics;
             }
             catch (HttpRequestException)
             {
-                return "Lyrics not available";
+                return "Şarkı sözleri mevcut değil";
             }
             catch (JsonException)
             {
-                return "Lyrics not available";
+                return "Şarkı sözleri mevcut değil";
             }
         }
     }
