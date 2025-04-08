@@ -1,0 +1,68 @@
+@model LyricsFinder.Models.LyricsSearchViewModel
+
+@{
+    ViewData["Title"] = "Search Songs";
+}
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="mb-0">Song Finder</h2>
+                </div>
+                <div class="card-body">
+                    <p class="lead text-center mb-4">Search for songs by title, artist, or lyrics</p>
+                    <form asp-controller="Lyrics" asp-action="Search" method="post">
+                        <div class="form-group mb-4">
+                            <textarea asp-for="InputLyrics" class="form-control form-control-lg" rows="3" 
+                                      placeholder="Enter song title, artist name, or lyrics..."></textarea>
+                            <span asp-validation-for="InputLyrics" class="text-danger"></span>
+                        </div>
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg px-5">
+                                <i class="fas fa-search me-2"></i> Search Songs
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div class="mt-5">
+                        <div class="row text-center">
+                            <div class="col-md-4 mb-3">
+                                <div class="card h-100 border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <i class="fas fa-music fa-2x text-primary mb-3"></i>
+                                        <h5>Find by Title</h5>
+                                        <p class="text-muted">Search for songs by entering the title</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="card h-100 border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <i class="fas fa-user fa-2x text-primary mb-3"></i>
+                                        <h5>Find by Artist</h5>
+                                        <p class="text-muted">Enter an artist's name to find their songs</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="card h-100 border-0 shadow-sm">
+                                    <div class="card-body">
+                                        <i class="fas fa-quote-right fa-2x text-primary mb-3"></i>
+                                        <h5>Find by Lyrics</h5>
+                                        <p class="text-muted">Remember a line? Search with lyrics snippets</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+} 
