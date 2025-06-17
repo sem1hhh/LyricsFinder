@@ -1,0 +1,7 @@
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\LyricsFinder.exe
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\appsettings.Development.json
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\appsettings.json
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\LyricsFinder.dll
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\LyricsFinder.deps.json
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\LyricsFinder.runtimeconfig.json
+C:\Users\Sem1h\Desktop\LyricsFinder-main\bin\Release\net9.0\publish\LyricsFinder.pdb

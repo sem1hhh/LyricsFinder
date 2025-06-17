@@ -9,18 +9,42 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Web;
 using System.Text;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using System.Threading;
+using Microsoft.AspNetCore.Identity;
+using LyricsFinder.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace LyricsFinder.Services
 {
     public class LyricsService
     {
         private readonly HttpClient _httpClient;
+        private readonly IMemoryCache _cache;
+        private readonly ILogger<LyricsService> _logger;
+        private readonly ApplicationDbContext _context;
+        private readonly UserManager<ApplicationUser> _userManager;
         private readonly string _lyricsApiBaseUrl = "https://api.lyrics.ovh/v1";
-        private readonly string _deezerSuggestApiUrl = "https://api.lyrics.ovh/suggest/";
+        private readonly string _deezerSuggestApiUrl = "https://api.deezer.com/search?q=";
+        
+        // Cache ayarları
+        private readonly TimeSpan _searchCacheDuration = TimeSpan.FromMinutes(30);
+        private readonly TimeSpan _lyricsCacheDuration = TimeSpan.FromHours(24);
+        private readonly SemaphoreSlim _lyricsSemaphore = new SemaphoreSlim(5, 5); // Aynı anda maksimum 5 lyrics isteği
 
-        public LyricsService(HttpClient httpClient)
+        public LyricsService(
+            HttpClient httpClient, 
+            IMemoryCache cache, 
+            ILogger<LyricsService> logger,
+            ApplicationDbContext context,
+            UserManager<ApplicationUser> userManager)
         {
             _httpClient = httpClient;
+            _cache = cache;
+            _logger = logger;
+            _context = context;
+            _userManager = userManager;
         }
 
         // Method to convert Turkish characters to English equivalents
@@ -55,35 +79,54 @@ namespace LyricsFinder.Services
             return result.ToString();
         }
 
-        public async Task<List<SongMatch>> SearchSongsByLyrics(string searchQuery, int maxResults = 10)
+        public async Task<List<SongMatch>> SearchSongsByLyrics(string searchQuery, int maxResults = 10, string? userId = null)
         {
             if (string.IsNullOrWhiteSpace(searchQuery))
             {
                 return new List<SongMatch>();
             }
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
             try
             {
+                // Cache key oluştur
+                var cacheKey = $"search_{searchQuery.ToLower().Trim()}_{maxResults}";
+                
+                // Cache'den kontrol et
+                if (_cache.TryGetValue(cacheKey, out List<SongMatch> cachedResults))
+                {
+                    _logger.LogInformation($"Cache hit for search: {searchQuery}");
+                    
+                    // Arama geçmişini kaydet
+                    if (!string.IsNullOrEmpty(userId))
+                    {
+                        await SaveSearchHistory(searchQuery, cachedResults.Count, stopwatch.ElapsedMilliseconds, userId);
+                    }
+                    
+                    return cachedResults;
+                }
+
                 // Convert Turkish characters to English equivalents for better search results
                 var englishQuery = ConvertTurkishToEnglish(searchQuery);
-                Console.WriteLine($"Original query: {searchQuery}");
-                Console.WriteLine($"Converted query: {englishQuery}");
+                _logger.LogInformation($"Searching for: {searchQuery} (converted: {englishQuery})");
                 
                 // Use the Deezer suggest API to search for tracks
-                // Convert spaces to + for API compatibility
                 var encodedQuery = HttpUtility.UrlEncode(englishQuery).Replace("+", "%20");
                 var apiUrl = $"{_deezerSuggestApiUrl}{encodedQuery}";
                 
-                Console.WriteLine($"Searching with URL: {apiUrl}");
+                _logger.LogInformation($"API URL: {apiUrl}");
                 
                 var response = await _httpClient.GetAsync(apiUrl);
                 
                 var content = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"API Response: {content}");
+                _logger.LogInformation($"API Response Status: {response.StatusCode}");
+                _logger.LogInformation($"API Response Content Length: {content.Length}");
                 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"API Error: {response.StatusCode}");
+                    _logger.LogWarning($"API Error: {response.StatusCode} for query: {searchQuery}");
+                    _logger.LogWarning($"API Error Content: {content}");
                     return new List<SongMatch> 
                     { 
                         new SongMatch 
@@ -95,80 +138,201 @@ namespace LyricsFinder.Services
                     };
                 }
 
+                // Log first 500 characters of response for debugging
+                _logger.LogInformation($"API Response Preview: {content.Substring(0, Math.Min(500, content.Length))}");
+
                 var suggestResponse = JsonSerializer.Deserialize<DeezerSuggestResponse>(content, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
                 });
 
-                if (suggestResponse == null || suggestResponse.Data == null || !suggestResponse.Data.Any())
+                if (suggestResponse?.Data == null || !suggestResponse.Data.Any())
                 {
-                    Console.WriteLine("No results from API");
+                    _logger.LogInformation($"No results found for: {searchQuery}");
+                    _logger.LogInformation($"SuggestResponse: {JsonSerializer.Serialize(suggestResponse)}");
                     return new List<SongMatch> 
                     { 
                         new SongMatch 
                         { 
                             Title = "Sonuç Bulunamadı", 
-                            Artist = "Hata Ayıklama Bilgisi",
-                            Lyrics = $"Hata ayıklama bilgisi: URL={apiUrl}\nYanıt={content}" 
+                            Artist = "Arama Sonucu",
+                            Lyrics = $"'{searchQuery}' için sonuç bulunamadı.\nAPI URL: {apiUrl}\nResponse: {content.Substring(0, Math.Min(200, content.Length))}" 
                         } 
                     };
                 }
 
+                _logger.LogInformation($"Found {suggestResponse.Data.Count} tracks from API");
+
+                var tracks = suggestResponse.Data.Take(maxResults).ToList();
                 var matchedSongs = new List<SongMatch>();
 
-                // For each track in the response, create a SongMatch 
-                foreach (var track in suggestResponse.Data.Take(maxResults))
+                for (int i = 0; i < tracks.Count; i++)
                 {
+                    var track = tracks[i];
                     var songMatch = new SongMatch
                     {
                         Artist = track.Artist?.Name ?? "Bilinmeyen Sanatçı",
                         Title = track.Title ?? "Bilinmeyen Şarkı",
-                        Lyrics = $"API Yanıtı Önizlemesi (ilk 200 karakter):\n{content.Substring(0, Math.Min(content.Length, 200))}...",
                         AlbumCover = track.Album?.CoverMedium,
                         PreviewUrl = track.Preview,
                         ArtistImage = track.Artist?.PictureMedium,
-                        MatchScore = 100 // Direct search
+                        MatchScore = 100
                     };
-                    
-                    // Try to get lyrics if possible
-                    try
+
+                    if (i == 0 && track.Artist?.Name != null && track.Title != null)
                     {
-                        if (track.Artist?.Name != null && track.Title != null)
+                        // Sadece ilk şarkı için lyrics çek
+                        try
                         {
-                            var lyrics = await GetLyrics(track.Artist.Name, track.Title);
-                            if (!string.IsNullOrWhiteSpace(lyrics) && lyrics != "Lyrics not available")
+                            await _lyricsSemaphore.WaitAsync();
+                            try
                             {
-                                songMatch.Lyrics = lyrics;
+                                var lyrics = await GetLyrics(track.Artist.Name, track.Title);
+                                songMatch.Lyrics = string.IsNullOrWhiteSpace(lyrics) || lyrics == "Lyrics not available"
+                                    ? "Şarkı sözleri mevcut değil"
+                                    : lyrics;
                             }
-                            else
+                            finally
                             {
-                                songMatch.Lyrics = "Şarkı sözleri mevcut değil";
+                                _lyricsSemaphore.Release();
                             }
                         }
+                        catch
+                        {
+                            songMatch.Lyrics = "Şarkı sözleri alınırken hata oluştu";
+                        }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Console.WriteLine($"Error getting lyrics: {ex.Message}");
-                        songMatch.Lyrics = "Şarkı sözleri alınırken hata oluştu";
+                        songMatch.Lyrics = "Şarkı sözleri için tıklayın";
                     }
-                    
+
                     matchedSongs.Add(songMatch);
                 }
 
+                // Sonuçları cache'e kaydet
+                _cache.Set(cacheKey, matchedSongs, _searchCacheDuration);
+                
+                // Arama geçmişini kaydet
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    await SaveSearchHistory(searchQuery, matchedSongs.Count, stopwatch.ElapsedMilliseconds, userId);
+                }
+                
+                _logger.LogInformation($"Found {matchedSongs.Count} results for: {searchQuery}");
                 return matchedSongs;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error searching songs: {ex.Message}");
+                _logger.LogError($"Error searching songs for '{searchQuery}': {ex.Message}");
+                _logger.LogError($"Stack trace: {ex.StackTrace}");
                 return new List<SongMatch>
                 {
                     new SongMatch
                     {
                         Title = "Hata Oluştu",
-                        Artist = "Hata Detayları",
-                        Lyrics = $"Hata Türü: {ex.GetType().Name}\nMesaj: {ex.Message}\nYığın İzleme: {ex.StackTrace}"
+                        Artist = "Sistem Hatası",
+                        Lyrics = $"Arama sırasında bir hata oluştu. Lütfen tekrar deneyin.\nHata: {ex.Message}"
                     }
                 };
+            }
+            finally
+            {
+                stopwatch.Stop();
+            }
+        }
+
+        private async Task SaveSearchHistory(string searchTerm, int resultCount, long durationMs, string userId)
+        {
+            try
+            {
+                var searchHistory = new SearchHistory
+                {
+                    SearchTerm = searchTerm,
+                    ResultCount = resultCount,
+                    SearchDurationMs = durationMs,
+                    UserId = userId,
+                    SearchedAt = DateTime.UtcNow
+                };
+
+                _context.SearchHistories.Add(searchHistory);
+                await _context.SaveChangesAsync();
+                
+                _logger.LogInformation($"Search history saved for user {userId}: {searchTerm}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Failed to save search history: {ex.Message}");
+            }
+        }
+
+        public async Task<bool> AddToFavorites(string artist, string title, string? albumCover, string? previewUrl, string? lyrics, string userId)
+        {
+            try
+            {
+                // Check if already exists
+                var existing = await _context.FavoriteSongs
+                    .FirstOrDefaultAsync(f => f.UserId == userId && f.Artist == artist && f.Title == title);
+
+                if (existing != null)
+                {
+                    return false; // Already exists
+                }
+
+                var favoriteSong = new FavoriteSong
+                {
+                    Artist = artist,
+                    Title = title,
+                    AlbumCover = albumCover,
+                    PreviewUrl = previewUrl,
+                    Lyrics = lyrics,
+                    UserId = userId,
+                    AddedAt = DateTime.UtcNow
+                };
+
+                _context.FavoriteSongs.Add(favoriteSong);
+                await _context.SaveChangesAsync();
+
+                _logger.LogInformation($"Song added to favorites: {artist} - {title} for user {userId}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error adding to favorites: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<List<FavoriteSong>> GetUserFavorites(string userId)
+        {
+            try
+            {
+                return await _context.FavoriteSongs
+                    .Where(f => f.UserId == userId)
+                    .OrderByDescending(f => f.AddedAt)
+                    .ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error getting user favorites: {ex.Message}");
+                return new List<FavoriteSong>();
+            }
+        }
+
+        public async Task<List<SearchHistory>> GetUserSearchHistory(string userId, int limit = 20)
+        {
+            try
+            {
+                return await _context.SearchHistories
+                    .Where(s => s.UserId == userId)
+                    .OrderByDescending(s => s.SearchedAt)
+                    .Take(limit)
+                    .ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error getting user search history: {ex.Message}");
+                return new List<SearchHistory>();
             }
         }
 
@@ -181,6 +345,16 @@ namespace LyricsFinder.Services
             
             try
             {
+                // Cache key oluştur
+                var cacheKey = $"lyrics_{artist.ToLower().Trim()}_{title.ToLower().Trim()}";
+                
+                // Cache'den kontrol et
+                if (_cache.TryGetValue(cacheKey, out string cachedLyrics))
+                {
+                    _logger.LogInformation($"Cache hit for lyrics: {artist} - {title}");
+                    return cachedLyrics;
+                }
+
                 // Also convert artist and title to English for better lyrics search
                 var englishArtist = ConvertTurkishToEnglish(artist);
                 var englishTitle = ConvertTurkishToEnglish(title);
@@ -189,22 +363,35 @@ namespace LyricsFinder.Services
                 
                 if (!response.IsSuccessStatusCode)
                 {
+                    _logger.LogWarning($"Lyrics API error for {artist} - {title}: {response.StatusCode}");
                     return "Şarkı sözleri mevcut değil";
                 }
 
                 var content = await response.Content.ReadAsStringAsync();
                 var lyricsResponse = JsonSerializer.Deserialize<LyricsResponse>(content);
                 
-                return string.IsNullOrWhiteSpace(lyricsResponse?.Lyrics) 
+                var lyrics = string.IsNullOrWhiteSpace(lyricsResponse?.Lyrics) 
                     ? "Şarkı sözleri mevcut değil" 
-                    : lyricsResponse.Lyrics;
+                    : lyricsResponse.Lyrics ?? "Şarkı sözleri mevcut değil";
+
+                // Sonucu cache'e kaydet
+                _cache.Set(cacheKey, lyrics, _lyricsCacheDuration);
+                
+                return lyrics;
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
+                _logger.LogWarning($"HTTP request error for lyrics {artist} - {title}: {ex.Message}");
                 return "Şarkı sözleri mevcut değil";
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                _logger.LogWarning($"JSON parsing error for lyrics {artist} - {title}: {ex.Message}");
+                return "Şarkı sözleri mevcut değil";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Unexpected error getting lyrics for {artist} - {title}: {ex.Message}");
                 return "Şarkı sözleri mevcut değil";
             }
         }
